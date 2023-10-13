@@ -1,0 +1,10 @@
+[package]
+name = "RustRegex"
+version = "0.0.1"
+authors = ["Daniel Philipov <dp33@illinois.edu>", "Sohum Sharma <sohums3@illinois.edu>"]
+rust-version = "1.73.0"
+description = "A simple implementation of a regular expression compiler, using Deterministic Finite Automata"
+readme = "README.md"
+repository = "https://github.com/Dandandooo/RustRegex"
+keywords = ["regex"]
+publish = false
