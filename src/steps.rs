@@ -1,5 +1,6 @@
 use automata::NFA;
 use automata::DFA;
+use parse_regex::tokenize_regex;
 
 // @param regex looks like: "/[a-z]+/i", where the part between the slashes is the regex,
 // and the last characters are the flags.
