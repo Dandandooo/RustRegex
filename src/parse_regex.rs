@@ -8,13 +8,13 @@ enum TokenType {
     Pipe,
     Normal,
 }
-struct Token {
+pub struct Token {
     token: String,
     token_type: TokenType,
     quantifier: String,
-    sub_group: Vec<Token>,
+    sub_groups: Vec<Token>,
 }
-pub fn tokenize_regex(regex: &str) -> (Vec<Vec<String>>, HashSet<char>) {
+pub fn tokenize_regex(regex: &str) -> (Vec<Token>, HashSet<char>) {
     // index of the right most slash in the regular expression (the one before the flags)
     let r_index = regex.rfind(|c| c == '/').unwrap();
 
@@ -29,73 +29,58 @@ pub fn tokenize_regex(regex: &str) -> (Vec<Vec<String>>, HashSet<char>) {
 
 fn split_to_parts(regex: String) -> Vec<String> {
     let mut parts: Vec<String> = Vec::new();
-    let mut chars = regex.chars().peekable();
+    let chars: Vec<char> = regex.chars().collect();
+    let mut cur_index: usize = 0;
 
-    let mut cur_char = chars.next();
-    while cur_char != None {
-        let cc = cur_char.unwrap();
-        if cc == '\\' {
-            let nc = chars.peek();
-            if nc == None { panic!("Invalid regex"); }
-            let ncc = chars.next().unwrap();
-            let mut quant = String::new();
-            if chars.peek() != None {
-                let quant_char = chars.next().unwrap();
-                if quant_char == '?' || quant_char == '*' || quant_char == '+' {
-                    quant.push(quant_char);
-                    if chars.peek() != None {
-                        let quant_char = chars.next().unwrap();
-                        quant.push(quant_char);
-                    }
-                }
+    while cur_index < chars.len() {
+        let mut cur_token: String = String::new();
+
+        if chars[cur_index] == '(' || chars[cur_index] == '[' {
+            let end_index = find_paren_match(&regex, cur_index);
+            cur_token.push_str(&regex[cur_index..end_index + 1]);
+            cur_index = end_index + 1;
+        } else {
+            if chars[cur_index] == '\\' {
+                cur_token.push(chars[cur_index]);
+                cur_index += 1;
             }
-
+            cur_token.push(chars[cur_index]);
+            cur_index += 1;
         }
+        // Getting the quantifiers
+        if cur_index < chars.len() {
+            if chars[cur_index] == '*' || chars[cur_index] == '+' {
+                cur_token.push(chars[cur_index]);
+                cur_index += 1;
+            } else if chars[cur_index] == '{' {
+                let end_index = regex[cur_index..].find('}').unwrap() + cur_index;
+                cur_token.push_str(&regex[cur_index..end_index + 1]);
+                cur_index = end_index + 1;
+            }
+            if cur_index < chars.len() && chars[cur_index] == '?' {
+                cur_token.push(chars[cur_index]);
+                cur_index += 1;
+            }
+        }
+        parts.push(cur_token);
     }
-
-    todo!();
+    parts
 }
 
 fn parts_to_token(parts: Vec<String>) -> Vec<Token> {
+    let mut tokens: Vec<Token> = Vec::new();
     todo!();
 }
 
-fn tokenize(regex: String) -> Vec<Vec<String>> {
+fn tokenize(regex: String) -> Vec<Token> {
     todo!();
-}
-
-fn capture_group(regex: String, starting_index: usize) -> String {
-    let end_parentheses = match regex.as_bytes()[starting_index] as char {
-        '(' => ')',
-        '[' => ']',
-        _ => panic!("Invalid capture group"),
-    };
-    let mut cur_depth = 0;
-
-    let mut parentheses: String = String::new();
-
-    for (idx, char) in regex.char_indices().skip(starting_index + 1) {
-        if char == '(' || char == '[' {
-            cur_depth += 1;
-            parentheses.push(char);
-        } else if char == end_parentheses && cur_depth == 0 {
-            return regex[starting_index..idx + 1].to_string();
-        } else if char == ')' && char == parentheses.as_bytes()[parentheses.len() - 1] as char {
-            cur_depth -= 1;
-            parentheses.pop();
-        } else if char == ']' && char == parentheses.as_bytes()[parentheses.len() - 1] as char {
-            cur_depth -= 1;
-            parentheses.pop();
-        }
-    }
-    panic!("Invalid capture group");
-    
 }
 
 fn find_paren_match(regex: &String, starting_index: usize) -> usize {
     let end_parentheses = match regex.as_bytes()[starting_index] as char {
         '(' => ')',
         '[' => ']',
+        '{' => '}',
         _ => panic!("Invalid capture group"),
     };
     let mut cur_depth = 0;
@@ -106,7 +91,7 @@ fn find_paren_match(regex: &String, starting_index: usize) -> usize {
         if char == '(' || char == '[' {
             cur_depth += 1;
             parentheses.push(char);
-        } else if char == end_parentheses && cur_depth == 0 {
+        } else if char == end_parentheses && cur_depth == 1 {
             return idx;
         } else if char == ')' && char == parentheses.as_bytes()[parentheses.len() - 1] as char {
             cur_depth -= 1;
@@ -170,36 +155,50 @@ mod tests {
     fn test_split4() {
         let regex = r"a(b|c)*?".to_string();
         let tokens = split_to_parts(regex);
+        println!("{:?}", tokens);
         assert_eq!(tokens, vec![r"a", r"(b|c)*?"]);
     }
 
+    #[test]
     fn test_split_question() {
         let regex = r"a?b".to_string();
         let tokens = split_to_parts(regex);
         assert_eq!(tokens, vec![r"a?", r"b"]);
     }
 
+    #[test]
     fn test_split_backslash() {
-        let regex = r"a\\b".to_string();
+        let regex = r"a\w".to_string();
         let tokens = split_to_parts(regex);
         assert_eq!(tokens, vec![r"a",r"\w"]);
     }
 
+    #[test]
     fn test_split_backslash_quantifier() {
         let regex = r"a\*b".to_string();
         let tokens = split_to_parts(regex);
-        assert_eq!(tokens, vec![r"a",r"\*"]);
+        assert_eq!(tokens, vec![r"a",r"\*", "b"]);
     }
 
+    #[test]
     fn test_split_backslash_parentheses() {
         let regex = r"a\(b".to_string();
         let tokens = split_to_parts(regex);
         assert_eq!(tokens, vec![r"a",r"\(","b"]);
     }
 
+    #[test]
     fn test_split_backslash_backslash() {
         let regex = r"a\\b".to_string();
         let tokens = split_to_parts(regex);
         assert_eq!(tokens, vec![r"a",r"\\","b"]);
     }
+
+    #[test]
+    fn test_split_quantifier() {
+        let regex = r"a{1,2}b".to_string();
+        let tokens = split_to_parts(regex);
+        assert_eq!(tokens, vec![r"a{1,2}", "b"]);
+    }
+
 }
