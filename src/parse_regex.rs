@@ -14,7 +14,7 @@ pub struct Token {
     quantifier: String,
     sub_groups: Vec<Token>,
 }
-pub fn tokenize_regex(regex: &str) -> (Vec<Token>, HashSet<char>) {
+pub fn process_regex(regex: &str) -> (Vec<Token>, HashSet<char>) {
     // index of the right most slash in the regular expression (the one before the flags)
     let r_index = regex.rfind(|c| c == '/').unwrap();
 
@@ -69,6 +69,32 @@ fn split_to_parts(regex: String) -> Vec<String> {
 
 fn parts_to_token(parts: Vec<String>) -> Vec<Token> {
     let mut tokens: Vec<Token> = Vec::new();
+
+    for part in parts {
+        let mut cur_index: usize = 0;
+        let mut cur_token: Token = Token {
+            token: String::new(),
+            token_type: TokenType::Normal,
+            quantifier: String::new(),
+            sub_groups: Vec::new(),
+        };
+        if part.as_bytes()[0] as char == '(' {
+            let end_index = find_paren_match(&part, 0);
+            let inner_component = part[1..end_index].to_string();
+            cur_token.token_type = TokenType::CaptureGroup;
+        } else if part.as_bytes()[0] as char == '[' {
+            cur_token.token_type = TokenType::CharacterClass;
+        } else {
+            if part.as_bytes()[0] as char == '\\' {
+                cur_token.token.push(part.as_bytes()[0] as char);
+                cur_index += 1;
+            }
+            cur_token.token.push(part.as_bytes()[cur_index] as char);
+            cur_index += 1;
+        }
+        cur_token.quantifier = part[cur_index..].to_string();
+        tokens.push(cur_token);
+    }
     todo!();
 }
 
@@ -118,11 +144,32 @@ fn check_pipe(regex: &String) -> bool {
         } else if char == ']' && char == parentheses.as_bytes()[parentheses.len() - 1] as char {
             cur_depth -= 1;
             parentheses.pop();
-        } else if char == '|' && cur_depth == 0 {
+        } else if char == '|' && cur_depth <= 0 {
             return true;
         }
     }
     false
+}
+
+fn find_pipes(regex: &String) -> Vec<usize> {
+    let mut cur_depth = 0;
+    let mut parentheses: String = String::new();
+    let mut pipes: Vec<usize> = Vec::new();
+    for (idx, char) in regex.char_indices() {
+        if char == '(' || char == '[' {
+            cur_depth += 1;
+            parentheses.push(char);
+        } else if char == ')' && char == parentheses.as_bytes()[parentheses.len() - 1] as char {
+            cur_depth -= 1;
+            parentheses.pop();
+        } else if char == ']' && char == parentheses.as_bytes()[parentheses.len() - 1] as char {
+            cur_depth -= 1;
+            parentheses.pop();
+        } else if char == '|' && cur_depth <= 0 {
+            pipes.push(idx);
+        }
+    }
+    pipes
 }
 
 #[cfg(test)]
