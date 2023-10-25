@@ -41,3 +41,5 @@ The biggest challenge will be managing the large complex datastructure that is t
 ## Why we chose this
 
 I (Daniel) have had mild success making a more basic regex compiler in python, but it ended up being horrendously complicated and unreadable, which hopefully I can improve upon, while learning a lot about managing datastructures in rust.
+
+I (Sohum) wanted to work with graphs since I have only learned about them theoretically, but have never applied them on a real project. Creating a regex compiler seemed like the perfect way to implement a graph while also learning how Rust works and gaining Rust experience.  
