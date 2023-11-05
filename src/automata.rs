@@ -1,22 +1,56 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::vec::Vec;
+use parse_regex::Token;
 
+#[derive(Default)]
 pub struct NFA {
-    regex: String,
-    flags: HashSet<char>,
-    data: HashMap<i8, NfaNode>,
+    pub(crate) regex: String,
+    pub(crate) flags: HashSet<char>,
+    data: HashMap<u8, NfaNode>,
     range: HashSet<char>,
 }
 
+
 struct NfaNode {
-    id: i8,
+    id: u8,
     is_terminal: bool,
-    paths: Vec<(char, &'static i8)>,
+    paths: Vec<(char, &'static NfaNode)>,
 }
 
 impl NFA {
-    fn new() -> Self {
+    pub fn new(regex: String, flags: HashSet<char>) -> Self {
+        NFA {
+            regex,
+            flags,
+            data: HashMap::from([(0, NfaNode::new(0))]),
+            range: HashSet::new(),
+        }
+    }
+
+    pub fn from(token: Token, starting_id: u8) -> Self {
+        let regex = token.token + &token.quantifier;
+        let mut data: HashMap<u8, NfaNode> = HashMap::new();
+        data.insert(starting_id, NfaNode::new(starting_id));
+        let mut next_id = starting_id + 1;
+
+
+
+
+
+        NFA {
+            regex,
+            flags: HashSet::new(),
+            data,
+            range: HashSet::new(),
+        }
+    }
+
+    pub fn append_nfa(&mut self, nfa: NFA) -> Self {
+        todo!();
+    }
+
+    fn default() -> Self {
         NFA {
             regex: String::new(),
             flags: HashSet::new(),
@@ -43,7 +77,7 @@ impl NFA {
 }
 
 impl NfaNode {
-    fn new(id: i8) -> Self {
+    fn new(id: u8) -> Self {
         NfaNode {
             id,
             is_terminal: false,
@@ -68,8 +102,8 @@ impl NfaNode {
         } true
     }
 
-    fn add_path(&mut self, ch: char, node_id: &'static i8) {
-        self.paths.push((ch, node_id));
+    fn add_path(&mut self, ch: char, node_pointer: &'static NfaNode) {
+        self.paths.push((ch, node_pointer));
     }
 
 
@@ -78,14 +112,14 @@ impl NfaNode {
 pub struct DFA {
     regex: String,
     flags: HashSet<char>,
-    data: HashMap<i8, DfaNode>,
+    data: HashMap<u8, DfaNode>,
     range: HashSet<char>,
 }
 
 struct DfaNode {
-    id: i8,
+    id: u8,
     is_terminal: bool,
-    paths: HashMap<char, &'static i8>
+    paths: HashMap<char, &'static u8>
 }
 
 impl DFA {
@@ -111,11 +145,11 @@ impl DFA {
         }
     }
 
-    fn get_node(&self, id: &i8) -> Option<&DfaNode> {
+    fn get_node(&self, id: &u8) -> Option<&DfaNode> {
         self.data.get(id)
     }
 
-    fn get_node_mut(&mut self, id: &i8) -> Option<&mut DfaNode> {
+    fn get_node_mut(&mut self, id: &u8) -> Option<&mut DfaNode> {
         self.data.get_mut(id)
     }
 
@@ -155,7 +189,7 @@ impl DFA {
         let mut current_node = self.get_front().unwrap();
         for ch in input.chars() {
             if current_node.paths.contains_key(&ch) {
-                current_node = self.get_node(current_node.follow(&ch)).unwrap();
+                current_node = self.get_node(&current_node.follow(&ch)).unwrap();
             } else {
                 return false;
             }
@@ -165,7 +199,7 @@ impl DFA {
 }
 
 impl DfaNode {
-    fn new(id: i8) -> Self {
+    fn new(id: u8) -> Self {
         DfaNode {
             id,
             is_terminal: false,
@@ -181,15 +215,16 @@ impl DfaNode {
         }
     }
 
-    fn add_path(&mut self, ch: char, node_id: &'static i8) {
-        self.paths.insert(ch, node_id);
+    fn add_path(&mut self, ch: char, node_pointer: &'static u8) {
+        self.paths.insert(ch, node_pointer);
+        todo!();
     }
 
     fn from(nfa_node: NfaNode) -> Self {
-        let mut paths: HashMap<char, &'static i8> = HashMap::new();
+        let mut paths: HashMap<char, &'static u8> = HashMap::new();
         for (ch, node_id) in nfa_node.paths {
             if !paths.contains_key(&ch) {
-                paths.insert(ch, node_id);
+                paths.insert(ch, &node_id.id);
             }
         }
         DfaNode {
@@ -199,8 +234,8 @@ impl DfaNode {
         }
     }
 
-    fn follow(&self, ch: &char) -> &'static i8 {
-        self.paths.get(&ch).unwrap()
+    fn follow(&self, ch: &char) -> &u8 {
+        *self.paths.get(ch).unwrap()
     }
 
 

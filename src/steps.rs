@@ -1,11 +1,18 @@
 use automata::NFA;
 use automata::DFA;
-use parse_regex::tokenize_regex;
+use parse_regex::process_regex;
+
+pub fn make_dfa(regex: String) -> DFA {
+    step4(step3(step2(step1(regex))))
+}
 
 // @param regex looks like: "/[a-z]+/i", where the part between the slashes is the regex,
 // and the last characters are the flags.
 // Goal of step 1 is to convert the regex to a NFA with epsilon connections;
 fn step1(regex: String) -> NFA {
+    let (tokens, flags) = process_regex(&regex);
+    let mut nfa = NFA::new(regex, flags);
+
     todo!();
 }
 
