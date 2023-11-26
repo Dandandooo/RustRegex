@@ -54,7 +54,7 @@ impl TokenQuantifier {
 pub enum Token {
     Normal { token: char, quantifier: TokenQuantifier },
     CaptureGroup { sub_groups: Vec<Token>, quantifier: TokenQuantifier },
-    CharacterClass { class_options: HashSet<char>, quantifier: TokenQuantifier, exclude: bool},
+    CharacterClass { class_options: HashSet<char>, quantifier: TokenQuantifier, /* exclude: bool */},
     Pipe { sub_groups: Vec<Vec<Token>> },
 }
 
@@ -78,15 +78,15 @@ impl Token {
 
         // Character Class
         else if part.as_bytes()[0] as char == '[' {
-            let exclude: bool = part.as_bytes()[1] as char == '^';
+            // let exclude: bool = part.as_bytes()[1] as char == '^';
             let end_index = find_paren_match(&part, 0);
 
-            let inner_component = part[1 + (exclude as usize)..end_index].to_string();
+            let inner_component = part[1 /* + (exclude as usize) */..end_index].to_string();
             let class_options = process_character_class(inner_component);
 
             let quantifier = part[end_index + 1..].to_string();
 
-            Token::CharacterClass { class_options, quantifier: TokenQuantifier::from_string(quantifier), exclude }
+            Token::CharacterClass { class_options, quantifier: TokenQuantifier::from_string(quantifier) }
         }
 
         // Normal Token
@@ -463,7 +463,7 @@ mod tests {
         let tokens: Vec<Token> = parts_to_token(split_to_parts(regex));
         let correct_tokens: Vec<Token> = vec![
             Token::Normal { token: Token::WORD_CHAR, quantifier: TokenQuantifier::None },
-            Token::CharacterClass { class_options: HashSet::<char>::from(['b', 'c']), quantifier: TokenQuantifier::None, exclude: false },
+            Token::CharacterClass { class_options: HashSet::<char>::from(['b', 'c']), quantifier: TokenQuantifier::None, /* exclude: false */},
             Token::Normal { token: 'd', quantifier: TokenQuantifier::None }];
         assert_eq!(tokens, correct_tokens);
     }
@@ -491,17 +491,18 @@ mod tests {
         let tokens: Vec<Token> = parts_to_token(split_to_parts(regex));
         let correct_tokens: Vec<Token> = vec![
             Token::Normal { token: Token::WORD_CHAR, quantifier: TokenQuantifier::None },
-            Token::CharacterClass { class_options: HashSet::<char>::from(['a', 'b', 'c', 'd']), quantifier: TokenQuantifier::None, exclude: false },
+            Token::CharacterClass { class_options: HashSet::<char>::from(['a', 'b', 'c', 'd']), quantifier: TokenQuantifier::None, /* exclude: false */ },
             Token::Normal { token: 'd', quantifier: TokenQuantifier::None }];
         assert_eq!(tokens, correct_tokens);
     }
 
-    #[test]
+    // #[test]
+    #[allow(unused)]
     fn test_parts_to_token_class_exclude() {
         let parts: Vec<String> = vec!["[^ab]".to_string()];
         let tokens: Vec<Token> = parts_to_token(parts);
         let correct_tokens: Vec<Token> = vec![
-            Token::CharacterClass { class_options: HashSet::<char>::from(['a', 'b']), quantifier: TokenQuantifier::None, exclude: true }];
+            Token::CharacterClass { class_options: HashSet::<char>::from(['a', 'b']), quantifier: TokenQuantifier::None, /* exclude: true */}];
         assert_eq!(tokens, correct_tokens);
     }
 
@@ -515,7 +516,7 @@ mod tests {
             Token::CaptureGroup { sub_groups: vec![
                 Token::Pipe { sub_groups: vec![
                     vec![Token::Normal { token: 'c', quantifier: TokenQuantifier::None }],
-                    vec![Token::CharacterClass { class_options: HashSet::<char>::from(['a', 'b']), quantifier: TokenQuantifier::Plus, exclude: false }]
+                    vec![Token::CharacterClass { class_options: HashSet::<char>::from(['a', 'b']), quantifier: TokenQuantifier::Plus, /* exclude: false */}]
                 ] } ], quantifier: TokenQuantifier::Star},
             Token::Normal { token: 'd', quantifier: TokenQuantifier::Question }];
         assert_eq!(tokens, correct_tokens);

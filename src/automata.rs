@@ -236,18 +236,14 @@ impl NFA {
                     _ => (),
                 }
             },
-            Token::CharacterClass { class_options, quantifier, exclude } => {
+            Token::CharacterClass { class_options, quantifier } => {
                 let next_id = self.next_available_id();
                 let next_node = NfaNode::new(next_id);
                 self.data.insert(next_id, next_node);
-                for char in class_options {
-                    self.add_path(&start_id, &next_id, char);
+                for char in &class_options {
+                    self.add_path(&start_id, &next_id, *char);
                     match quantifier {
-                        TokenQuantifier::Plus => self.add_path(&next_id, &next_id, char),
-                        TokenQuantifier::Star => {
-                            self.add_path(&next_id, &next_id, char);
-                            self.add_path(&start_id, &next_id, NFA::EPSILON);
-                        },
+                        TokenQuantifier::Plus | TokenQuantifier::Star => self.add_path(&next_id, &next_id, *char),
                         _ => (),
                     }
                 }
@@ -255,7 +251,50 @@ impl NFA {
                     TokenQuantifier::Question | TokenQuantifier::Star => {
                         self.add_path(&start_id, &next_id, NFA::EPSILON);
                     },
-                    TokenQuantifier::Range (range_type) => todo!(),
+                    TokenQuantifier::Range (range_type) => match range_type {
+                        RangeType::Discrete (num_times) => {
+                            for _ in 0..num_times {
+                                self.add_token(Token::CharacterClass {
+                                    class_options: class_options.clone(),
+                                    quantifier: TokenQuantifier::None,
+                                });
+                            }
+                        },
+                        RangeType::LowerBound (lower_bound) => {
+                            for _ in 0..lower_bound {
+                                self.add_token(Token::CharacterClass {
+                                    class_options: class_options.clone(),
+                                    quantifier: TokenQuantifier::None,
+                                });
+                            }
+                            self.add_token(Token::CharacterClass {
+                                class_options: class_options.clone(),
+                                quantifier: TokenQuantifier::Star,
+                            });
+                        },
+                        RangeType::UpperBound (upper_bound) => {
+                            for _ in 0..upper_bound {
+                                self.add_token(Token::CharacterClass {
+                                    class_options: class_options.clone(),
+                                    quantifier: TokenQuantifier::Question,
+                                });
+                            }
+                        },
+                        RangeType::Both (lower_bound, upper_bound){
+                            for _ in 0..lower_bound {
+                                self.add_token(Token::CharacterClass {
+                                    class_options: class_options.clone(),
+                                    quantifier: TokenQuantifier::None,
+                                });
+                            }
+                            for _ in lower_bound..upper_bound {
+                                self.add_token(Token::CharacterClass {
+                                    class_options: class_options.clone(),
+                                    quantifier: TokenQuantifier::Question,
+                                });
+                            }
+                        }
+                    },
                     _ => (),
                 }
                 self.cur_last = next_id;
