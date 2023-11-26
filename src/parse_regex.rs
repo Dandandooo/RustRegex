@@ -1,45 +1,128 @@
 use std::vec::Vec;
 use std::collections::HashSet;
 
-#[derive(PartialEq, Debug)]
-enum TokenType {
-    CaptureGroup,
-    CharacterClass,
-    Pipe,
-    Normal,
+#[derive(PartialEq, Debug, Default, Copy, Clone)]
+pub enum TokenQuantifier {
+    Star,
+    Plus,
+    Question,
+    Range(RangeType),
+    #[default]
+    None,
 }
 
-/*
-    * Token is a struct that represents a single token in a regular expression.
-    * A Normal token (not capture group) should have one character in its token field, and no sub_groups.
-    * A Pipe token should have no characters in its token field, and at least one sub_group.
-    * A Character class should have the character class in its class_options field, and no sub_groups.
-    * A Capture group should have its contents split into tokens stored in the sub_groups field, and its quantifier in the quantifier field.
- */
-#[derive(PartialEq, Debug)]
-pub struct Token {
-    pub(crate) token: String,
-    token_type: TokenType,
-    pub(crate) quantifier: String,
-    sub_groups: Vec<Token>,
-    class_options: HashSet<char>,
+#[derive(PartialEq, Debug, Copy, Clone)]
+pub enum RangeType {
+    Discrete(usize),
+    UpperBound(usize),
+    LowerBound(usize),
+    Both(usize, usize),
 }
 
+impl TokenQuantifier {
+    fn from_string(quantifier: String) -> Self {
+        if quantifier.len() == 0 {
+            return TokenQuantifier::None;
+        }
+        match quantifier.as_bytes()[0] as char {
+            '*' => TokenQuantifier::Star,
+            '+' => TokenQuantifier::Plus,
+            '{' => TokenQuantifier::range_from_string(quantifier),
+            '?' => TokenQuantifier::Question,
+            _ => TokenQuantifier::None,
+        }
+    }
 
+    fn range_from_string(quantifier: String) -> Self {
+        let end_index = find_paren_match(&quantifier, 0);
+        let inner_component = quantifier[1..end_index].to_string();
+        if inner_component.contains(',') {
+            let bounds: Vec<&str> = inner_component.split(',').collect();
+            return if bounds[1].len() == 0 {
+                TokenQuantifier::Range(RangeType::LowerBound(str::parse::<usize>(bounds[0]).unwrap()))
+            } else if bounds[0].len() == 0 {
+                TokenQuantifier::Range(RangeType::UpperBound(str::parse::<usize>(bounds[1]).unwrap()))
+            } else {
+                TokenQuantifier::Range(RangeType::Both(str::parse::<usize>(bounds[0]).unwrap(), str::parse::<usize>(bounds[1]).unwrap()))
+            };
+        }
+        TokenQuantifier::Range(RangeType::Discrete(str::parse::<usize>(inner_component.as_str()).unwrap()))
+    }
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum Token {
+    Normal { token: char, quantifier: TokenQuantifier },
+    CaptureGroup { sub_groups: Vec<Token>, quantifier: TokenQuantifier },
+    CharacterClass { class_options: HashSet<char>, quantifier: TokenQuantifier, exclude: bool},
+    Pipe { sub_groups: Vec<Vec<Token>> },
+}
 
 impl Token {
-    fn blank() -> Self {
-        Token {
-            token: String::new(),
-            token_type: TokenType::Normal,
-            quantifier: String::new(),
-            sub_groups: Vec::<Token>::new(),
-            class_options: HashSet::<char>::new(),
+    const WORD_CHAR: char = '🦀';
+    const WILD_CARD: char = '🃏';
+    const WHITE_SPACE: char = '🫥';
+    const NUMBER: char = '💯';
+
+    fn from(part: String) -> Self {
+        // Capture Group
+        return if part.as_bytes()[0] as char == '(' {
+            let end_index = find_paren_match(&part, 0);
+            let inner_component = part[1..end_index].to_string();
+
+            let sub_groups: Vec<Token> = tokenize(inner_component);
+            let quantifier = part[end_index + 1..].to_string();
+
+            Token::CaptureGroup { sub_groups, quantifier: TokenQuantifier::from_string(quantifier) }
+        }
+
+        // Character Class
+        else if part.as_bytes()[0] as char == '[' {
+            let exclude: bool = part.as_bytes()[1] as char == '^';
+            let end_index = find_paren_match(&part, 0);
+
+            let inner_component = part[1 + (exclude as usize)..end_index].to_string();
+            let class_options = process_character_class(inner_component);
+
+            let quantifier = part[end_index + 1..].to_string();
+
+            Token::CharacterClass { class_options, quantifier: TokenQuantifier::from_string(quantifier), exclude }
+        }
+
+        // Normal Token
+        else {
+            let mut cur_string = String::new();
+            let mut cur_index: usize = 0;
+            if part.as_bytes()[0] as char == '\\' {
+                cur_string.push(part.as_bytes()[0] as char);
+                cur_index += 1;
+            }
+            cur_string.push(part.as_bytes()[cur_index] as char);
+            cur_index += 1;
+
+            let cur_token = match cur_string.as_str() {
+                r"\w" => Token::WORD_CHAR,
+                r"\s" => Token::WHITE_SPACE,
+                r"\d" => Token::NUMBER,
+                "." => Token::WILD_CARD,
+                r"\t" => '\t',
+                r"\n" => '\n',
+                r"\r" => '\r',
+                _ => cur_string.as_bytes()[cur_string.len()-1] as char,
+            };
+
+            let quantifier = part[cur_index..].to_string();
+
+            Token::Normal { token: cur_token, quantifier: TokenQuantifier::from_string(quantifier) }
         }
     }
 }
 
+
 pub fn process_regex(regex: &str) -> (Vec<Token>, HashSet<char>) {
+    if regex.as_bytes()[0] as char != '/' {
+        return (tokenize(regex.to_string()), HashSet::new());
+    }
     // index of the right most slash in the regular expression (the one before the flags)
     let r_index = regex.rfind(|c| c == '/').unwrap();
 
@@ -50,48 +133,6 @@ pub fn process_regex(regex: &str) -> (Vec<Token>, HashSet<char>) {
     let ex = regex[1..r_index].to_string();
     
     (tokenize(ex), flags)
-}
-
-fn split_pipes(regex: &String) -> Vec<String> {
-    let mut cur_string = String::new();
-    let mut parentheses: String = String::new();
-    let mut options: Vec<String> = Vec::new();
-
-    let chars = regex.chars();
-
-    for char in chars {
-        if char == '|' && parentheses.is_empty() {
-            options.push(cur_string.clone());
-            cur_string.clear();
-        } else {
-            if char == '(' || char == '[' {
-                parentheses.push(char);
-            } else if char == ')' && '(' == parentheses.as_bytes()[parentheses.len() - 1] as char {
-                parentheses.pop();
-            } else if char == ']' && '[' == parentheses.as_bytes()[parentheses.len() - 1] as char {
-                parentheses.pop();
-            }
-            cur_string.push(char);
-        }
-    }
-    options.push(cur_string);
-
-    options
-}
-fn split_pipes_vec(parts: &Vec<String>) -> Vec<Vec<String>> {
-    let mut options: Vec<Vec<String>> = Vec::new();
-    let mut cur_vec: Vec<String> = Vec::new();
-    for part in parts {
-        if part == "|" {
-            options.push(cur_vec.clone());
-            cur_vec.clear();
-        } else {
-            cur_vec.push(part.clone());
-        }
-    }
-    options.push(cur_vec);
-
-    options
 }
 
 fn split_to_parts(regex: String) -> Vec<String> {
@@ -135,42 +176,23 @@ fn split_to_parts(regex: String) -> Vec<String> {
 }
 
 fn parts_to_token(parts: Vec<String>) -> Vec<Token> {
-    let mut tokens: Vec<Token> = Vec::new();
-
-    for part in parts {
-        let mut cur_index: usize = 0;
-        let mut cur_token: Token = Token::blank();
-        if part.as_bytes()[0] as char == '(' {
-            let end_index = find_paren_match(&part, 0);
-            let inner_component = part[1..end_index].to_string();
-            cur_token.token_type = TokenType::CaptureGroup;
-            cur_token.sub_groups = parts_to_token(split_to_parts(inner_component));
-            cur_index = end_index + 1;
-        } else if part.as_bytes()[0] as char == '[' {
-            let end_index = find_paren_match(&part, 0);
-            if part.as_bytes()[1] as char == '^' {
-                cur_token.token.push(part.as_bytes()[1] as char);
-                cur_index += 1;
-            }
-            let inner_component = part[cur_index + 1..end_index].to_string();
-            cur_token.token_type = TokenType::CharacterClass;
-            cur_token.class_options = process_character_class(inner_component);
-            cur_index = end_index + 1;
-        } else {
-            if part.as_bytes()[0] as char == '\\' {
-                cur_token.token.push(part.as_bytes()[0] as char);
-                cur_index += 1;
-            }
-            cur_token.token.push(part.as_bytes()[cur_index] as char);
-            cur_index += 1;
-        }
-        cur_token.quantifier = part[cur_index..].to_string();
-        tokens.push(cur_token);
+    if parts.contains(&"|".to_string()) {
+        let split: Vec<Vec<String>> = split_pipes_vec(&parts);
+        let sub_groups: Vec<Vec<Token>> = split.iter().map(|vec: &Vec<String>| parts_to_token(vec.to_owned())).collect();
+        return vec![Token::Pipe { sub_groups }]
     }
-    tokens
+    parts.iter().map(
+        |x: &String | Token::from(x.clone())
+    ).collect::<Vec<Token>>()
 }
 
 fn tokenize(regex: String) -> Vec<Token> {
+    if check_pipe(&regex) {
+        let options: Vec<String> = split_pipes(&regex);
+        let split: Vec<Vec<String>> = options.iter().map(|option: &String| split_to_parts(option.to_owned())).collect();
+        let sub_groups: Vec<Vec<Token>> = split.iter().map(|vec: &Vec<String>| parts_to_token(vec.to_owned())).collect();
+        return vec![Token::Pipe { sub_groups }]
+    }
     parts_to_token(split_to_parts(regex))
 }
 
@@ -181,21 +203,21 @@ fn find_paren_match(regex: &String, starting_index: usize) -> usize {
         '{' => '}',
         _ => panic!("Invalid capture group"),
     };
-    let mut cur_depth = 0;
-
     let mut parentheses: String = String::new();
 
     for (idx, char) in regex.char_indices().skip(starting_index) {
-        if char == '(' || char == '[' {
-            cur_depth += 1;
-            parentheses.push(char);
-        } else if char == end_parentheses && cur_depth == 1 {
+        if char == '(' || char == '[' || char == '{' {
+            match char {
+                '(' => parentheses.push(')'),
+                '[' => parentheses.push(']'),
+                '{' => parentheses.push('}'),
+                _ => panic!("Invalid capture group"),
+            }
+        } else if char == end_parentheses && parentheses.len() == 1 {
             return idx;
         } else if char == ')' && char == parentheses.as_bytes()[parentheses.len() - 1] as char {
-            cur_depth -= 1;
             parentheses.pop();
         } else if char == ']' && char == parentheses.as_bytes()[parentheses.len() - 1] as char {
-            cur_depth -= 1;
             parentheses.pop();
         }
     }
@@ -206,7 +228,7 @@ fn find_paren_match(regex: &String, starting_index: usize) -> usize {
 fn check_pipe(regex: &String) -> bool {
     let mut cur_depth = 0;
     let mut parentheses: String = String::new();
-    for char in regex.chars() {
+    for (idx, char) in regex.char_indices() {
         if char == '(' || char == '[' {
             cur_depth += 1;
             parentheses.push(char);
@@ -216,7 +238,7 @@ fn check_pipe(regex: &String) -> bool {
         } else if char == ']' && char == parentheses.as_bytes()[parentheses.len() - 1] as char {
             cur_depth -= 1;
             parentheses.pop();
-        } else if char == '|' && cur_depth <= 0 {
+        } else if char == '|' && cur_depth <= 0 && idx > 0 && regex.as_bytes()[idx-1] as char != '\\' {
             return true;
         }
     }
@@ -237,11 +259,54 @@ fn find_pipes(regex: &String) -> Vec<usize> {
         } else if char == ']' && char == parentheses.as_bytes()[parentheses.len() - 1] as char {
             cur_depth -= 1;
             parentheses.pop();
-        } else if char == '|' && cur_depth <= 0 {
+        } else if char == '|' && cur_depth <= 0 && idx > 0 && regex.as_bytes()[idx-1] as char != '\\' {
             pipes.push(idx);
         }
     }
     pipes
+}
+
+fn split_pipes(regex: &String) -> Vec<String> {
+    let mut cur_string = String::new();
+    let mut parentheses: String = String::new();
+    let mut options: Vec<String> = Vec::new();
+
+    let chars = regex.chars();
+
+    for char in chars {
+        if char == '|' && parentheses.is_empty() {
+            options.push(cur_string.clone());
+            cur_string.clear();
+        } else {
+            if char == '(' || char == '[' {
+                parentheses.push(char);
+            } else if char == ')' && '(' == parentheses.as_bytes()[parentheses.len() - 1] as char {
+                parentheses.pop();
+            } else if char == ']' && '[' == parentheses.as_bytes()[parentheses.len() - 1] as char {
+                parentheses.pop();
+            }
+            cur_string.push(char);
+        }
+    }
+    options.push(cur_string);
+
+    options
+}
+
+fn split_pipes_vec(parts: &Vec<String>) -> Vec<Vec<String>> {
+    let mut options: Vec<Vec<String>> = Vec::new();
+    let mut cur_vec: Vec<String> = Vec::new();
+    for part in parts {
+        if part == "|" {
+            options.push(cur_vec.clone());
+            cur_vec.clear();
+        } else {
+            cur_vec.push(part.clone());
+        }
+    }
+    options.push(cur_vec);
+
+    options
 }
 
 fn process_character_class(character_class: String) -> HashSet<char> {
@@ -250,16 +315,13 @@ fn process_character_class(character_class: String) -> HashSet<char> {
     let mut options = HashSet::<char>::new();
 
     for (idx, &char) in chars.iter().enumerate() {
-        if length - idx > 3 && chars[idx + 1] == '-' {
-            for c in char..=chars[idx + 2] {
-                options.insert(c);
-            }
-            continue;
+        if length - idx >= 2 && chars[idx + 1] == '-' {
+            options.extend(char..=chars[idx + 2]);
         }
-        if char == '-' && idx != 0 && idx != length - 1 {
-            options.insert(char);
+        else if (char == '-' && idx != 0 && idx != length - 1) || (idx >= 2 && chars[idx - 1] == '-') {
+            continue;
         } else if char != ']' {
-            options.push(char);
+            options.insert(char);
         }
     }
 
@@ -294,10 +356,10 @@ mod tests {
 
     #[test]
     fn test_split4() {
-        let regex = r"a(b|c)*?".to_string();
+        let regex = r"a(b|c)*".to_string();
         let tokens = split_to_parts(regex);
         println!("{:?}", tokens);
-        assert_eq!(tokens, vec![r"a", r"(b|c)*?"]);
+        assert_eq!(tokens, vec![r"a", r"(b|c)*"]);
     }
 
     #[test]
@@ -364,14 +426,21 @@ mod tests {
     }
 
     #[test]
+    fn test_split_pipes_vec() {
+        let parts: Vec<String> = vec!["a(b|c)d".to_string(), "|".to_string(), "e".to_string(), "|".to_string()];
+        let tokens = split_pipes_vec(&parts);
+        assert_eq!(tokens, vec![vec!["a(b|c)d".to_string()], vec!["e".to_string()], vec![]]);
+    }
+
+    #[test]
     fn test_parts_to_token_uninteresting() {
         let regex: String = r"abc*de".to_string();
         let tokens: Vec<Token> = parts_to_token(split_to_parts(regex));
-        let correct_tokens: Vec<Token> = vec![Token {token: "a".to_string(), ..Token::blank()},
-                                              Token {token: "b".to_string(), ..Token::blank()},
-                                              Token {token: "c".to_string(), quantifier: "*".to_string(), ..Token::blank()},
-                                              Token {token: "d".to_string(), ..Token::blank()},
-                                              Token {token: "e".to_string(), ..Token::blank()}];
+        let correct_tokens: Vec<Token> = vec![Token::Normal { token: 'a', quantifier: TokenQuantifier::None },
+                                              Token::Normal { token: 'b', quantifier: TokenQuantifier::None },
+                                              Token::Normal { token: 'c', quantifier: TokenQuantifier::Star },
+                                              Token::Normal { token: 'd', quantifier: TokenQuantifier::None },
+                                              Token::Normal { token: 'e', quantifier: TokenQuantifier::None }];
         assert_eq!(tokens, correct_tokens);
     }
 
@@ -380,10 +449,11 @@ mod tests {
         let regex: String = r"a(bc)*d".to_string();
         let tokens: Vec<Token> = parts_to_token(split_to_parts(regex));
         let correct_tokens: Vec<Token> = vec![
-            Token {token: "a".to_string(), ..Token::blank()},
-            Token {quantifier: "*".to_string(), token_type: TokenType::CaptureGroup, sub_groups: vec![Token {token: "b".to_string(), ..Token::blank()}, Token {token: "c".to_string(), ..Token::blank()}], ..Token::blank()},
-
-            Token {token: "d".to_string(), ..Token::blank()}];
+            Token::Normal {token: 'a', quantifier: TokenQuantifier::None},
+            Token::CaptureGroup { sub_groups: vec![Token::Normal { token: 'b', quantifier: TokenQuantifier::None },
+                                                   Token::Normal { token: 'c', quantifier: TokenQuantifier::None }],
+                                  quantifier: TokenQuantifier::Star},
+            Token::Normal { token: 'd', quantifier: TokenQuantifier::None }];
         assert_eq!(tokens, correct_tokens);
     }
 
@@ -392,10 +462,89 @@ mod tests {
         let regex: String = r"\w[bc]d".to_string();
         let tokens: Vec<Token> = parts_to_token(split_to_parts(regex));
         let correct_tokens: Vec<Token> = vec![
-            Token {token: r"\w".to_string(), ..Token::blank()},
-            Token {class_options: HashSet::<String>::from(["b".to_string(), "c".to_string()]), token_type: TokenType::CharacterClass, ..Token::blank()},
-            Token {token: r"a".to_string(), ..Token::blank()}
+            Token::Normal { token: Token::WORD_CHAR, quantifier: TokenQuantifier::None },
+            Token::CharacterClass { class_options: HashSet::<char>::from(['b', 'c']), quantifier: TokenQuantifier::None, exclude: false },
+            Token::Normal { token: 'd', quantifier: TokenQuantifier::None }];
+        assert_eq!(tokens, correct_tokens);
+    }
+
+    #[test]
+    fn test_process_character_class() {
+        let character_class: String = r"abc".to_string();
+        let options: HashSet<char> = process_character_class(character_class);
+        let correct_options: HashSet<char> = HashSet::from(['a', 'b', 'c']);
+        assert_eq!(options, correct_options);
+    }
+
+    #[test]
+    fn test_process_character_class_range() {
+        let character_class: String = r"a-c".to_string();
+        let options: HashSet<char> = process_character_class(character_class);
+        let correct_options: HashSet<char> = HashSet::from(['a', 'b', 'c']);
+        assert_eq!(options, correct_options);
+    }
+
+    #[test]
+    fn test_parts_to_token_class_range() {
+        // I'll be using a whale for \w
+        let regex: String = r"\w[a-d]d".to_string();
+        let tokens: Vec<Token> = parts_to_token(split_to_parts(regex));
+        let correct_tokens: Vec<Token> = vec![
+            Token::Normal { token: Token::WORD_CHAR, quantifier: TokenQuantifier::None },
+            Token::CharacterClass { class_options: HashSet::<char>::from(['a', 'b', 'c', 'd']), quantifier: TokenQuantifier::None, exclude: false },
+            Token::Normal { token: 'd', quantifier: TokenQuantifier::None }];
+        assert_eq!(tokens, correct_tokens);
+    }
+
+    #[test]
+    fn test_parts_to_token_class_exclude() {
+        let parts: Vec<String> = vec!["[^ab]".to_string()];
+        let tokens: Vec<Token> = parts_to_token(parts);
+        let correct_tokens: Vec<Token> = vec![
+            Token::CharacterClass { class_options: HashSet::<char>::from(['a', 'b']), quantifier: TokenQuantifier::None, exclude: true }];
+        assert_eq!(tokens, correct_tokens);
+    }
+
+    #[test]
+    fn test_tokenize_nested() {
+        let regex: String = r"a\w(c|[a-b]+)*d?".to_string();
+        let tokens: Vec<Token> = tokenize(regex);
+        let correct_tokens: Vec<Token> = vec![
+            Token::Normal { token: 'a', quantifier: TokenQuantifier::None },
+            Token::Normal { token: Token::WORD_CHAR, quantifier: TokenQuantifier::None },
+            Token::CaptureGroup { sub_groups: vec![
+                Token::Pipe { sub_groups: vec![
+                    vec![Token::Normal { token: 'c', quantifier: TokenQuantifier::None }],
+                    vec![Token::CharacterClass { class_options: HashSet::<char>::from(['a', 'b']), quantifier: TokenQuantifier::Plus, exclude: false }]
+                ] } ], quantifier: TokenQuantifier::Star},
+            Token::Normal { token: 'd', quantifier: TokenQuantifier::Question }];
+        assert_eq!(tokens, correct_tokens);
+    }
+
+    #[test]
+    fn test_tokenize_pipe() {
+        let regex: String = r"a(b|f)*d|e".to_string();
+        let tokens: Vec<Token> = tokenize(regex);
+        let correct_tokens: Vec<Token> = vec![
+            Token::Pipe {
+                sub_groups: vec![
+                    vec![
+                        Token::Normal { token: 'a', quantifier: TokenQuantifier::None },
+                        Token::CaptureGroup {
+                            sub_groups: vec![Token::Pipe {sub_groups: vec![
+                                vec![Token::Normal { token: 'b', quantifier: TokenQuantifier::None }],
+                                vec![Token::Normal { token: 'f', quantifier: TokenQuantifier::None }],
+                                ]}], quantifier: TokenQuantifier::Star
+                        },
+                        Token::Normal { token: 'd', quantifier: TokenQuantifier::None }
+                    ],
+                    vec![
+                        Token::Normal { token: 'e', quantifier: TokenQuantifier::None }
+                    ]
+                ]
+            }
         ];
+
         assert_eq!(tokens, correct_tokens);
     }
 
