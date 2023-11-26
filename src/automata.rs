@@ -280,7 +280,7 @@ impl NFA {
                                 });
                             }
                         },
-                        RangeType::Both (lower_bound, upper_bound){
+                        RangeType::Both (lower_bound, upper_bound) => {
                             for _ in 0..lower_bound {
                                 self.add_token(Token::CharacterClass {
                                     class_options: class_options.clone(),
@@ -1266,12 +1266,50 @@ mod tests {
     }
 
     #[test]
-    fn dfa_functionality_question(){
+    fn dfa_functionality_question() {
         let regex = r"ab?c";
         let dfa = DFA::from(regex.to_string());
         assert!(dfa.matches("ac"));
         assert!(dfa.matches("abc"));
         assert!(!dfa.matches("abbc"));
         assert!(!dfa.matches("ab"));
+    }
+
+    #[test]
+    fn dfa_functionality_capture_basic() {
+        let regex = r"(abc)";
+        let dfa = DFA::from(regex.to_string());
+        assert!(dfa.matches("abc"));
+        assert!(!dfa.matches("ab"));
+        assert!(!dfa.matches("bc"));
+        assert!(!dfa.matches("ac"));
+        assert!(!dfa.matches("abcd"));
+    }
+
+    #[test]
+    fn dfa_functionality_capture_inset() {
+        let regex = r"a(ab)b";
+        let dfa = DFA::from(regex.to_string());
+        assert!(dfa.matches("aabb"));
+        assert!(!dfa.matches("ab"));
+    }
+
+    #[test]
+    fn dfa_functionality_capture_nested() {
+        let regex = r"(a(bc))";
+        let dfa = DFA::from(regex.to_string());
+        assert!(dfa.matches("abc"));
+        assert!(!dfa.matches("a"));
+        assert!(!dfa.matches("bc"));
+    }
+
+    #[test]
+    fn dfa_functionality_capture_starred() {
+        let regex = r"c(ab)*";
+        let dfa = DFA::from(regex.to_string());
+        assert!(dfa.matches("c"));
+        assert!(dfa.matches("cab"));
+        assert!(dfa.matches("cabababab"));
+        assert!(!dfa.matches("caba"));
     }
 }
