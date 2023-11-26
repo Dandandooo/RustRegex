@@ -211,7 +211,7 @@ impl NFA {
                             })
                         },
                         RangeType::UpperBound ( upper_bound) => {
-                            for _ in 0..upper_bound {
+                            for _ in 0..=upper_bound {
                                 self.add_token(Token::CaptureGroup {
                                     sub_groups: sub_groups.clone(),
                                     quantifier: TokenQuantifier::Question
@@ -225,7 +225,7 @@ impl NFA {
                                     quantifier: TokenQuantifier::None,
                                 });
                             }
-                            for _ in lower_bound..upper_bound {
+                            for _ in lower_bound..=upper_bound {
                                 self.add_token(Token::CaptureGroup {
                                     sub_groups: sub_groups.clone(),
                                     quantifier: TokenQuantifier::Question,
@@ -273,7 +273,7 @@ impl NFA {
                             });
                         },
                         RangeType::UpperBound (upper_bound) => {
-                            for _ in 0..upper_bound {
+                            for _ in 0..=upper_bound {
                                 self.add_token(Token::CharacterClass {
                                     class_options: class_options.clone(),
                                     quantifier: TokenQuantifier::Question,
@@ -287,7 +287,7 @@ impl NFA {
                                     quantifier: TokenQuantifier::None,
                                 });
                             }
-                            for _ in lower_bound..upper_bound {
+                            for _ in lower_bound..=upper_bound {
                                 self.add_token(Token::CharacterClass {
                                     class_options: class_options.clone(),
                                     quantifier: TokenQuantifier::Question,
@@ -1311,5 +1311,49 @@ mod tests {
         assert!(dfa.matches("cab"));
         assert!(dfa.matches("cabababab"));
         assert!(!dfa.matches("caba"));
+    }
+
+    #[test]
+    fn dfa_functionality_capture_plussed() {
+        let regex = r"c(ab)+";
+        let dfa = DFA::from(regex.to_string());
+        assert!(!dfa.matches("c"));
+        assert!(dfa.matches("cab"));
+        assert!(dfa.matches("cabababab"));
+        assert!(!dfa.matches("caba"));
+    }
+
+    #[test]
+    fn dfa_functionality_capture_questioned() {
+        let regex = r"c(ab)?";
+        let dfa = DFA::from(regex.to_string());
+        assert!(dfa.matches("c"));
+        assert!(dfa.matches("cab"));
+        assert!(!dfa.matches("cabababab"));
+        assert!(!dfa.matches("caba"));
+    }
+
+    #[test]
+    fn dfa_functionality_normal_ranges() {
+        let regex_discrete = r"b{2}";
+        let regex_lower = r"b{2,}";
+        let regex_upper = r"b{,4}";
+        let regex_both = r"b{2,4}";
+        let dfa_discrete = DFA::from(regex_discrete.to_string());
+        let dfa_lower = DFA::from(regex_lower.to_string());
+        let dfa_upper = DFA::from(regex_upper.to_string());
+        let dfa_both = DFA::from(regex_both.to_string());
+        assert!(dfa_discrete.matches("bb"));
+        assert!(!dfa_discrete.matches("b"));
+        assert!(!dfa_discrete.matches("bbb"));
+        assert!(!dfa_discrete.matches("bbbb"));
+        assert!(dfa_lower.matches("bb"));
+        assert!(dfa_lower.matches("bbb"));
+        assert!(!dfa_lower.matches("b"));
+        assert!(dfa_upper.matches(""));
+        assert!(dfa_upper.matches("b"));
+        assert!(dfa_upper.matches("bb"));
+        assert!(dfa_upper.matches("bbb"));
+        assert!(dfa_upper.matches("bbbb"));
     }
 }
