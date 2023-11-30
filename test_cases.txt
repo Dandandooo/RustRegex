@@ -1,0 +1,7 @@
+/[a-z]+/
+ false
+abscsdafkasdlkfjaslkj true
+asdflaslkdjlsa true
+as1l231jclj false
+1 false
+abc true
