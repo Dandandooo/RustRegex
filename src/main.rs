@@ -1,10 +1,8 @@
-pub mod automata;
-pub mod parse_regex;
-pub mod steps;
+extern crate rust_regex;
 
-use steps::make_dfa;
+use rust_regex::test_regex;
 
 fn main() {
-    let regex: String = "/[a-z]+/i".to_string();
-    let nfa = make_dfa(regex);
+    let filename = "test_cases.txt";
+    test_regex(filename);
 }

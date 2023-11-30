@@ -1,3 +1,4 @@
+
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::vec::Vec;
 use parse_regex::{process_regex, RangeType, Token, TokenQuantifier};
@@ -22,10 +23,10 @@ struct NfaNode {
 
 impl NFA {
     const EPSILON: char = '\0';
-    const WORD_CHAR: char = '🦀';
-    const WILD_CARD: char = '🃏';
-    const WHITE_SPACE: char = '🫥';
-    const NUMBER: char = '💯';
+    // const WORD_CHAR: char = '🦀';
+    // const WILD_CARD: char = '🃏';
+    // const WHITE_SPACE: char = '🫥';
+    // const NUMBER: char = '💯';
 
     pub fn from(regex: String) -> Self {
         let (tokens, flags) = process_regex(&regex);
@@ -149,7 +150,7 @@ impl NFA {
                                 let mut possible_ids: Vec<Id> = vec![start_id.clone()];
 
                                 let mut prev_id = start_id.clone();
-                                let mut next_id = self.next_available_id();
+                                let mut next_id;
                                 for _ in 0..upper {
                                     next_id = self.next_available_id();
                                     let next_node = NfaNode::new(next_id);
@@ -321,10 +322,6 @@ impl NFA {
         }
     }
 
-    fn get_front(&self) -> &NfaNode {
-        self.data.get(&0).unwrap()
-    }
-
     fn has_epsilon(&self) -> bool {
         for (_, node) in &self.data {
             for (ch, _) in &node.paths {
@@ -401,7 +398,7 @@ impl NFA {
                 let new_id = self.next_available_id();
                 let mut new_node = NfaNode::new(new_id);
                 for next in nexts {
-                    let next_paths = self.data[next].paths.clone();
+                    let next_paths = self.data.get(next).unwrap().paths.clone();
                     new_node.paths.extend(next_paths);
                     to_remove.insert(*next);
                 }
@@ -532,10 +529,6 @@ impl DFA {
         self.data.get(id)
     }
 
-    fn get_node_mut(&mut self, id: &u8) -> &mut DfaNode {
-        self.data.get_mut(id).unwrap()
-    }
-
     // Returns true if the input string matches the DFA.
     pub fn matches(&self, input: &str) -> bool {
         let mut current_node = self.get_front();
@@ -586,30 +579,44 @@ impl DFA {
             self.spread_through(next, visited);
         }
     }
+
+    pub fn display(&self) {
+        let mut range: HashSet<char> = HashSet::new();
+        for (_, node) in &self.data {
+            range.extend(node.paths.keys());
+        }
+        let mut range: Vec<char> = range.iter().map(|&x| x).collect();
+        range.sort();
+
+        print!(" ");
+        for ch in range.iter() {
+            print!("  {ch}");
+        }
+
+        println!();
+
+        for (id, node) in &self.data {
+            if node.is_terminal {
+                print!("\x1b[34m{id}\x1b[0m")
+            } else {
+                print!("{id}")
+            }
+
+            for ch in &range{
+                if node.paths.contains_key(ch) {
+                    print!("{:>3}", node.paths.get(ch).unwrap())
+                }
+                else {
+                    print!("\x1b[37m_\x1b[0m");
+                }
+            }
+
+            println!();
+        }
+    }
 }
 
 impl DfaNode {
-    fn new(id: u8) -> Self {
-        DfaNode {
-            id,
-            is_terminal: false,
-            paths: HashMap::new(),
-        }
-    }
-
-    fn clone(&self) -> Self {
-        DfaNode {
-            id: self.id.clone(),
-            is_terminal: self.is_terminal.clone(),
-            paths: self.paths.clone(),
-        }
-    }
-
-    fn add_path(&mut self, ch: char, node_id: Id) {
-        self.paths.insert(ch, node_id);
-        todo!();
-    }
-
     fn from(nfa_node: NfaNode) -> Self {
         let mut paths: HashMap<char, Id> = HashMap::new();
         for (ch, node_id) in nfa_node.paths {
@@ -1355,5 +1362,166 @@ mod tests {
         assert!(dfa_upper.matches("bb"));
         assert!(dfa_upper.matches("bbb"));
         assert!(dfa_upper.matches("bbbb"));
+        assert!(!dfa_upper.matches("bbbbb"));
+        assert!(!dfa_both.matches(""));
+        assert!(!dfa_both.matches("b"));
+        assert!(dfa_both.matches("bb"));
+        assert!(dfa_both.matches("bbb"));
+        assert!(dfa_both.matches("bbbb"));
+        assert!(!dfa_both.matches("bbbbb"));
+    }
+
+    #[test]
+    fn dfa_functionality_class_basic() {
+        let regex = "[a-d]";
+        let dfa = DFA::from(regex.to_string());
+        assert!(dfa.matches("a"));
+        assert!(dfa.matches("b"));
+        assert!(dfa.matches("c"));
+        assert!(dfa.matches("d"));
+        assert!(!dfa.matches(""));
+        assert!(!dfa.matches("e"));
+        assert!(!dfa.matches("aa"));
+    }
+
+    #[test]
+    fn dfa_functionality_class_starred() {
+        let regex = "[a-c]*";
+        let dfa = DFA::from(regex.to_string());
+        assert!(dfa.matches(""));
+        assert!(dfa.matches("a"));
+        assert!(dfa.matches("b"));
+        assert!(dfa.matches("c"));
+        assert!(dfa.matches("aa"));
+        assert!(dfa.matches("aabbabcaccabbacabacbccabcbbacbca"));
+    }
+
+    #[test]
+    fn dfa_functionality_class_plussed() {
+        let regex = "[a-c]+";
+        let dfa = DFA::from(regex.to_string());
+        assert!(!dfa.matches(""));
+        assert!(dfa.matches("a"));
+        assert!(dfa.matches("b"));
+        assert!(dfa.matches("c"));
+        assert!(dfa.matches("aa"));
+        assert!(dfa.matches("aabbabcaccabbacabacbccabcbbacbca"));
+    }
+
+    #[test]
+    fn dfa_functionality_class_questioned() {
+        let regex = "[a-c]?";
+        let dfa = DFA::from(regex.to_string());
+        assert!(dfa.matches(""));
+        assert!(dfa.matches("a"));
+        assert!(dfa.matches("b"));
+        assert!(dfa.matches("c"));
+        assert!(!dfa.matches("aa"));
+        assert!(!dfa.matches("aabbabcaccabbacabacbccabcbbacbca"));
+    }
+
+    #[test]
+    fn dfa_functionality_class_range_discrete() {
+        let regex = "[a-c]{2}";
+        let dfa = DFA::from(regex.to_string());
+        assert!(dfa.matches("aa"));
+        assert!(dfa.matches("ab"));
+        assert!(dfa.matches("ac"));
+        assert!(dfa.matches("ba"));
+        assert!(dfa.matches("bb"));
+        assert!(dfa.matches("bc"));
+        assert!(dfa.matches("ca"));
+        assert!(dfa.matches("cb"));
+        assert!(dfa.matches("cc"));
+        assert!(!dfa.matches("a"));
+        assert!(!dfa.matches("b"));
+        assert!(!dfa.matches("c"));
+    }
+
+    #[test]
+    fn dfa_functionality_class_range_lower() {
+        let regex = "[a-c]{2,}";
+        let dfa = DFA::from(regex.to_string());
+        assert!(dfa.matches("aa"));
+        assert!(dfa.matches("ab"));
+        assert!(dfa.matches("ac"));
+        assert!(dfa.matches("ba"));
+        assert!(dfa.matches("bb"));
+        assert!(dfa.matches("bc"));
+        assert!(dfa.matches("ca"));
+        assert!(dfa.matches("cb"));
+        assert!(dfa.matches("cc"));
+        assert!(dfa.matches("acabcabbccaca"));
+        assert!(!dfa.matches("a"));
+        assert!(!dfa.matches("b"));
+        assert!(!dfa.matches("c"));
+        assert!(!dfa.matches(""));
+    }
+
+    #[test]
+    fn dfa_functionality_class_range_upper() {
+        let regex = "[a-c]{,2}";
+        let dfa = DFA::from(regex.to_string());
+        assert!(dfa.matches("aa"));
+        assert!(dfa.matches("ab"));
+        assert!(dfa.matches("ac"));
+        assert!(dfa.matches("ba"));
+        assert!(dfa.matches("bb"));
+        assert!(dfa.matches("bc"));
+        assert!(dfa.matches("ca"));
+        assert!(dfa.matches("cb"));
+        assert!(dfa.matches("cc"));
+        assert!(!dfa.matches("acabcabbccaca"));
+        assert!(dfa.matches("a"));
+        assert!(dfa.matches("b"));
+        assert!(dfa.matches("c"));
+        assert!(dfa.matches(""));
+    }
+
+    #[test]
+    fn dfa_functionality_class_range_both() {
+        let regex = "[a-c]{2,3}";
+        let dfa = DFA::from(regex.to_string());
+        assert!(dfa.matches("aa"));
+        assert!(dfa.matches("ab"));
+        assert!(dfa.matches("ac"));
+        assert!(dfa.matches("ba"));
+        assert!(dfa.matches("bb"));
+        assert!(dfa.matches("bc"));
+        assert!(dfa.matches("ca"));
+        assert!(dfa.matches("cb"));
+        assert!(dfa.matches("cc"));
+        assert!(dfa.matches("aaa"));
+        assert!(dfa.matches("aba"));
+        assert!(dfa.matches("aca"));
+        assert!(dfa.matches("baa"));
+        assert!(dfa.matches("bba"));
+        assert!(dfa.matches("bca"));
+        assert!(dfa.matches("caa"));
+        assert!(dfa.matches("cba"));
+        assert!(dfa.matches("cca"));
+        assert!(dfa.matches("aab"));
+        assert!(dfa.matches("abb"));
+        assert!(dfa.matches("acb"));
+        assert!(dfa.matches("bab"));
+        assert!(dfa.matches("bbb"));
+        assert!(dfa.matches("bcb"));
+        assert!(dfa.matches("cab"));
+        assert!(dfa.matches("cbb"));
+        assert!(dfa.matches("ccb"));
+        assert!(dfa.matches("aac"));
+        assert!(dfa.matches("abc"));
+        assert!(dfa.matches("acc"));
+        assert!(dfa.matches("bac"));
+        assert!(dfa.matches("bbc"));
+        assert!(dfa.matches("bcc"));
+        assert!(dfa.matches("cac"));
+        assert!(dfa.matches("cbc"));
+        assert!(dfa.matches("ccc"));
+        assert!(!dfa.matches("acabcabbccaca"));
+        assert!(!dfa.matches("a"));
+        assert!(!dfa.matches("b"));
+        assert!(!dfa.matches("c"));
+        assert!(!dfa.matches(""));
     }
 }

@@ -245,27 +245,6 @@ fn check_pipe(regex: &String) -> bool {
     false
 }
 
-fn find_pipes(regex: &String) -> Vec<usize> {
-    let mut cur_depth = 0;
-    let mut parentheses: String = String::new();
-    let mut pipes: Vec<usize> = Vec::new();
-    for (idx, char) in regex.char_indices() {
-        if char == '(' || char == '[' {
-            cur_depth += 1;
-            parentheses.push(char);
-        } else if char == ')' && char == parentheses.as_bytes()[parentheses.len() - 1] as char {
-            cur_depth -= 1;
-            parentheses.pop();
-        } else if char == ']' && char == parentheses.as_bytes()[parentheses.len() - 1] as char {
-            cur_depth -= 1;
-            parentheses.pop();
-        } else if char == '|' && cur_depth <= 0 && idx > 0 && regex.as_bytes()[idx-1] as char != '\\' {
-            pipes.push(idx);
-        }
-    }
-    pipes
-}
-
 fn split_pipes(regex: &String) -> Vec<String> {
     let mut cur_string = String::new();
     let mut parentheses: String = String::new();

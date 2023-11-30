@@ -1,5 +1,5 @@
 [package]
-name = "RustRegex"
+name = "rust_regex"
 version = "0.0.1"
 authors = ["Daniel Philipov <dp33@illinois.edu>", "Sohum Sharma <sohums3@illinois.edu>"]
 rust-version = "1.73.0"
