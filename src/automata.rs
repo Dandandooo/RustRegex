@@ -1,5 +1,4 @@
-
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque, BTreeSet};
 use std::vec::Vec;
 use parse_regex::{process_regex, RangeType, Token, TokenQuantifier};
 use std::fmt;
@@ -171,14 +170,22 @@ impl NFA {
                     }
                 } }
             Token::CaptureGroup { sub_groups, quantifier } => {
-                for token in &sub_groups {
-                    self.add_token(token.clone());
-                }
                 match quantifier {
+                    TokenQuantifier::None => {
+                        for token in &sub_groups {
+                            self.add_token(token.clone());
+                        };
+                    }
                     TokenQuantifier::Plus => {
+                        for token in &sub_groups {
+                            self.add_token(token.clone());
+                        };
                         self.add_path(&self.cur_last.clone(), &start_id, NFA::EPSILON);
                     },
                     TokenQuantifier::Star => {
+                        for token in &sub_groups {
+                            self.add_token(token.clone());
+                        };
                         let next_id = self.next_available_id();
                         let next_node = NfaNode::new(next_id);
                         self.data.insert(next_id, next_node);
@@ -188,6 +195,9 @@ impl NFA {
                         self.cur_last = next_id;
                     },
                     TokenQuantifier::Question => {
+                        for token in &sub_groups {
+                            self.add_token(token.clone());
+                        };
                         self.add_path(&start_id, &self.cur_last.clone(), NFA::EPSILON);
                     },
                     TokenQuantifier::Range (range_type) => match range_type {
@@ -200,19 +210,18 @@ impl NFA {
                             }
                         },
                         RangeType::LowerBound ( lower_bound) => {
+                            let mut last_last = start_id.clone();
                             for _ in 0..lower_bound {
+                                last_last = self.cur_last.clone();
                                 self.add_token(Token::CaptureGroup {
                                     sub_groups: sub_groups.clone(),
                                     quantifier: TokenQuantifier::None,
                                 })
                             }
-                            self.add_token(Token::CaptureGroup {
-                                sub_groups: sub_groups.clone(),
-                                quantifier: TokenQuantifier::Plus
-                            })
+                            self.add_path(&self.cur_last.clone(), &last_last, NFA::EPSILON);
                         },
                         RangeType::UpperBound ( upper_bound) => {
-                            for _ in 0..=upper_bound {
+                            for _ in 0..upper_bound {
                                 self.add_token(Token::CaptureGroup {
                                     sub_groups: sub_groups.clone(),
                                     quantifier: TokenQuantifier::Question
@@ -226,7 +235,7 @@ impl NFA {
                                     quantifier: TokenQuantifier::None,
                                 });
                             }
-                            for _ in lower_bound..=upper_bound {
+                            for _ in (lower_bound+1)..=upper_bound {
                                 self.add_token(Token::CaptureGroup {
                                     sub_groups: sub_groups.clone(),
                                     quantifier: TokenQuantifier::Question,
@@ -234,24 +243,10 @@ impl NFA {
                             }
                         }
                     },
-                    _ => (),
                 }
             },
             Token::CharacterClass { class_options, quantifier } => {
-                let next_id = self.next_available_id();
-                let next_node = NfaNode::new(next_id);
-                self.data.insert(next_id, next_node);
-                for char in &class_options {
-                    self.add_path(&start_id, &next_id, *char);
-                    match quantifier {
-                        TokenQuantifier::Plus | TokenQuantifier::Star => self.add_path(&next_id, &next_id, *char),
-                        _ => (),
-                    }
-                }
                 match quantifier {
-                    TokenQuantifier::Question | TokenQuantifier::Star => {
-                        self.add_path(&start_id, &next_id, NFA::EPSILON);
-                    },
                     TokenQuantifier::Range (range_type) => match range_type {
                         RangeType::Discrete (num_times) => {
                             for _ in 0..num_times {
@@ -272,6 +267,7 @@ impl NFA {
                                 class_options: class_options.clone(),
                                 quantifier: TokenQuantifier::Star,
                             });
+
                         },
                         RangeType::UpperBound (upper_bound) => {
                             for _ in 0..=upper_bound {
@@ -296,9 +292,26 @@ impl NFA {
                             }
                         }
                     },
-                    _ => (),
+                    _ => {
+                        let next_id = self.next_available_id();
+                        let next_node = NfaNode::new(next_id);
+                        self.data.insert(next_id, next_node);
+                        for char in &class_options {
+                            self.add_path(&start_id, &next_id, *char);
+                            match quantifier {
+                                TokenQuantifier::Plus | TokenQuantifier::Star => self.add_path(&next_id, &next_id, *char),
+                                _ => (),
+                            }
+                        }
+                        match quantifier {
+                            TokenQuantifier::Question | TokenQuantifier::Star => {
+                                self.add_path(&start_id, &next_id, NFA::EPSILON);
+                            },
+                            _ => (),
+                        }
+                        self.cur_last = next_id;
+                    }
                 }
-                self.cur_last = next_id;
             },
             Token::Pipe { sub_groups } => {
                 let root_id = start_id.clone();
@@ -350,6 +363,10 @@ impl NFA {
                 if self.data[lead].is_terminal {
                     self.data.entry(id.clone()).or_insert_with(|| lead_node.clone()).is_terminal = true;
                 }
+                // if self.data[id].is_terminal {
+                //     self.data.entry(lead.clone()).or_insert_with(|| lead_node.clone()).is_terminal = true;
+                // }
+
                 let lead_paths = self.data[lead].paths.clone();
                 for (ch, next) in lead_paths {
                     if self.data[id].paths.contains(&(ch, next)) {
@@ -386,29 +403,52 @@ impl NFA {
         } false
     }
 
+    fn ids_with_dupe(dupes: &HashMap<Id, HashMap<char, BTreeSet<Id>>>, nexts: &BTreeSet<Id>) -> HashSet<(Id, char)> {
+        let mut contain_nexts: HashSet<(Id, char)> = HashSet::new();
+        for (id, copies) in dupes.iter() {
+            for (c, n) in copies.iter() {
+                if *n == *nexts {
+                    contain_nexts.insert((*id, *c));
+                }
+            }
+        }
+        contain_nexts
+    }
+
     fn remove_duplicate_connections(&mut self) {
         while self.has_duplicates() {
-            let dupes: HashMap<Id, HashMap<char, HashSet<Id>>> = self.data.iter().map(|(id, node)| (*id, node.find_dupes())).collect();
-            let mut to_remove: HashSet<Id> = HashSet::new();
+            let dupes: HashMap<Id, HashMap<char, BTreeSet<Id>>> = self.data.iter().map(|(id, node)| (*id, node.find_dupes())).filter(|(_, dupe)| !dupe.is_empty()).collect();
 
             let cur_id = dupes.keys().min().unwrap().clone();
             let dupe = dupes.get(&cur_id).unwrap();
 
+            let mut covered_nexts: HashSet<&BTreeSet<Id>> = HashSet::new();
+
             for (ch, nexts) in dupe {
+                if covered_nexts.contains(nexts) { continue; }
+                covered_nexts.insert(nexts);
+                let contain_nexts = NFA::ids_with_dupe(&dupes, nexts);
+
                 let new_id = self.next_available_id();
                 let mut new_node = NfaNode::new(new_id);
+
                 for next in nexts {
                     let next_paths = self.data.get(next).unwrap().paths.clone();
                     new_node.paths.extend(next_paths);
-                    to_remove.insert(*next);
+                    for &(node_id, c) in contain_nexts.iter() {
+                        self.data.get_mut(&node_id).unwrap().paths.remove(&(c, *next));
+                    }
+                    new_node.is_terminal |= self.data.get(next).unwrap().is_terminal;
+                    // self.data.remove(next);
                 }
+
                 self.data.insert(new_id, new_node);
 
-                self.add_path(&cur_id, &new_id, *ch);
-            }
+                for &(node_id, ch) in contain_nexts.iter() {
+                    self.add_path(&node_id, &new_id, ch);
+                }
 
-            for id in to_remove {
-                self.data.remove(&id);
+                self.add_path(&cur_id, &new_id, *ch);
             }
         }
     }
@@ -427,6 +467,57 @@ impl NFA {
         dfa.data = new_data;
 
         dfa
+    }
+
+    fn char_range(&self) -> Vec<char> {
+        let mut range: HashSet<char> = HashSet::new();
+        for (_, node) in &self.data {
+            range.extend(node.paths.iter().map(|(ch, _)| ch));
+        }
+        let mut range: Vec<char> = range.iter().map(|&x| x).collect();
+        range.sort();
+        range
+    }
+
+    fn path_spacing(&self, range: &Vec<char>) -> usize {
+        let mut max_size = 0usize;
+        for (_, node) in self.data.iter() {
+            for ch in range.iter() {
+                if node.contains_char(ch) {
+                    let size = format!("{:?}", node.paths.iter().filter(|(c, _)| *c == *ch).map(|(_, next)| *next).collect::<Vec<Id>>()).len() + 1;
+                    if size > max_size { max_size = size; }
+                }
+            }
+        }
+        max_size
+    }
+
+    pub fn display(&self) {
+        let range = self.char_range();
+        let spacing = self.path_spacing(&range);
+
+        print!("{:<spacing$}", "");
+        for ch in range.iter() {
+            print!("{ch:<spacing$}", ch= match ch { '\0' => r"\0".to_string(), _ => ch.to_string() });
+        }
+
+        println!();
+
+        let mut keys = self.data.keys().map(|&x| x).collect::<Vec<Id>>();
+        keys.sort();
+
+        for (id, node) in keys.iter().map(|id| (id, self.data.get(id).unwrap())) {
+            print!("{id}{blank:<spacing$}", id=match node.is_terminal {true => format!("\x1b[31m{id}\x1b[0m"), _ => format!("{id}") }, blank="", spacing=spacing-1);
+            for ch in range.iter() {
+                if node.contains_char(ch) {
+                    print!("{:<spacing$}", format!("{:?}", node.paths.iter().filter(|(c, _)| *c == *ch).map(|(_, next)| *next).collect::<Vec<Id>>()));
+                }
+                else {
+                    print!("{:<spacing$}", "_");
+                }
+            }
+            println!();
+        }
     }
 
 }
@@ -475,18 +566,21 @@ impl NfaNode {
         self.paths.insert((ch, node_id));
     }
 
-    fn find_dupes(&self) -> HashMap<char, HashSet<Id>> {
-        let mut dupe_map: HashMap<char, HashSet<Id>> = HashMap::new();
+    fn find_dupes(&self) -> HashMap<char, BTreeSet<Id>> {
+        let mut dupe_map: HashMap<char, BTreeSet<Id>> = HashMap::new();
         for (ch, next) in self.paths.iter() {
             if dupe_map.contains_key(ch) {
                 dupe_map.get_mut(ch).unwrap().insert(*next);
             } else {
-                dupe_map.insert(*ch, HashSet::from([*next]));
+                dupe_map.insert(*ch, BTreeSet::from([*next]));
             }
         }
         dupe_map.iter().filter(|(_, v)| v.len() > 1).map(|(k, v)| (*k, v.clone())).collect()
     }
 
+    fn contains_char(&self, ch: &char) -> bool {
+        return self.paths.iter().any(|(c, _)| *c == *ch);
+    }
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -581,6 +675,7 @@ impl DFA {
     }
 
     pub fn display(&self) {
+        let spacing = 4usize;
         let mut range: HashSet<char> = HashSet::new();
         for (_, node) in &self.data {
             range.extend(node.paths.keys());
@@ -588,26 +683,30 @@ impl DFA {
         let mut range: Vec<char> = range.iter().map(|&x| x).collect();
         range.sort();
 
-        print!(" ");
+        print!("{:<spacing$}", "");
         for ch in range.iter() {
-            print!("  {ch}");
+            print!("{ch}{space:<spacing$}", ch = format!("\x1b[4m{ch}\x1b[0m"), space="", spacing=spacing-1);
         }
 
         println!();
 
-        for (id, node) in &self.data {
+        let mut keys = self.data.keys().map(|&x| x).collect::<Vec<Id>>();
+        keys.sort();
+
+        for id in keys.iter() {
+            let node = self.data.get(id).unwrap();
             if node.is_terminal {
-                print!("\x1b[34m{id}\x1b[0m")
+                print!("\x1b[34m{id:<spacing$}\x1b[0m")
             } else {
-                print!("{id}")
+                print!("{id:<spacing$}");
             }
 
             for ch in &range{
                 if node.paths.contains_key(ch) {
-                    print!("{:>3}", node.paths.get(ch).unwrap())
+                    print!("{:<spacing$}", node.paths.get(ch).unwrap())
                 }
                 else {
-                    print!("\x1b[37m_\x1b[0m");
+                    print!("\x1b[37m{:<spacing$}\x1b[0m", "_");
                 }
             }
 
@@ -1523,5 +1622,43 @@ mod tests {
         assert!(!dfa.matches("b"));
         assert!(!dfa.matches("c"));
         assert!(!dfa.matches(""));
+    }
+
+    #[test]
+    fn dfa_functionality_capture_range_discrete() {
+        let regex = r"(aa){2}";
+        let dfa = DFA::from(regex.to_string());
+        assert!(!dfa.matches("aa"));
+        assert!(dfa.matches("aaaa"));
+        assert!(!dfa.matches("aaaaaa"));
+    }
+
+    #[test]
+    fn dfa_functionality_capture_range_lower() {
+        let regex = r"(aa){2,}";
+        let dfa = DFA::from(regex.to_string());
+        assert!(dfa.matches("aaaa"));
+        assert!(dfa.matches("aaaaaa"));
+        assert!(!dfa.matches("aaaaaaaaa"));
+    }
+
+    #[test]
+    fn dfa_functionality_capture_range_upper() {
+        let regex = r"(aa){,2}";
+        let dfa = DFA::from(regex.to_string());
+        assert!(dfa.matches(""));
+        assert!(dfa.matches("aa"));
+        assert!(dfa.matches("aaaa"));
+        assert!(!dfa.matches("aaaaaa"));
+    }
+
+    #[test]
+    fn dfa_functionality_capture_range_both() {
+        let regex = r"(aa){2,3}";
+        let dfa = DFA::from(regex.to_string());
+        assert!(!dfa.matches("aa"));
+        assert!(dfa.matches("aaaa"));
+        assert!(dfa.matches("aaaaaa"));
+        assert!(!dfa.matches("aaaaaaaaa"));
     }
 }

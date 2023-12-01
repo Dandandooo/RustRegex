@@ -22,6 +22,7 @@ pub fn test_regex(file_path: &str) {
     println!("Regex: {regex}");
 
     let dfa = DFA::from(regex);
+    dfa.display();
     for line in lines.skip(1).map(|l| l.unwrap()) {
         let mut iter = line.split(' ');
         let string = iter.next().unwrap();

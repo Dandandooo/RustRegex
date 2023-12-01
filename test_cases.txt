@@ -1,7 +1,6 @@
-/[a-z]+/
+/(ab){2,3}/
  false
-abscsdafkasdlkfjaslkj true
-asdflaslkdjlsa true
-as1l231jclj false
-1 false
-abc true
+ab false
+abab true
+ababab true
+abababab false
