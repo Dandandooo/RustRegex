@@ -5,7 +5,19 @@
 
 # Rust Regex Compiler
 ## Overview
-A simple regex compiler for UIUC CS 128 Honors project. It will not have all the intricacies of the standard regex compiler, but will have basic features such as \*, +, |, ...
+A simple regex compiler for UIUC CS 128 Honors project. It will not have all the intricacies of the standard regex compiler, but will have the following features:
+* Capture groups ```"(ab)"``` - lets quantifiers operate on the entire group (capturing not supported)
+* Character classes ```"[abc]"``` - matches any character in the class
+* Character ranges ```"[a-zA-Z]"``` - matches any character in the range
+* Alternation ```"a|b"``` - matches either a or b (can be stacked or nested in capture groups)
+* Quantifiers:
+  * ```"*"``` - 0 or more
+  * ```"+"``` - 1 or more
+  * ```"?"``` - 0 or 1
+  * ```"{n}"``` - exactly n
+  * ```"{n,}"``` - n or more
+  * ```"{n,m}"``` - between n and m (inclusive)
+  * ```"{,m}"``` - at most m
 
 We chose this project because it is a challenging task with a very graphical implementation, which is easy to visualize but hard to implement.
 
